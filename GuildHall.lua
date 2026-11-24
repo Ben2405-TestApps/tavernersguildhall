@@ -7,15 +7,20 @@ local Hall = {db=DB}
 Core:RegisterModule("GuildHall", Hall)
 
 local frame, body, rows = nil, nil, {}
+local cursorY = -6
 local function AddLine(text, template)
   local fs = body:CreateFontString(nil, "OVERLAY", template or "GameFontHighlight")
-  fs:SetPoint("TOPLEFT", 10, -#rows * 25 - 6)
-  fs:SetWidth(660); fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
-  fs:SetText(text); rows[#rows+1] = fs
+  fs:SetPoint("TOPLEFT", 12, cursorY)
+  fs:SetWidth(650); fs:SetJustifyH("LEFT"); fs:SetWordWrap(true)
+  fs:SetText(text)
+  local height = math.max(18, fs:GetStringHeight() or 18)
+  cursorY = cursorY - height - 7
+  rows[#rows+1] = fs
 end
 local function Clear()
   for _, row in ipairs(rows) do row:Hide(); row:SetParent(nil) end
   rows = {}
+  cursorY = -6
 end
 local function CountQuests(module)
   if not module then return nil end
@@ -61,9 +66,32 @@ function Hall:Refresh()
   end
   AddLine("|cffffd27aGUILD ROSTER|r", "GameFontNormal")
   AddLine(IsInGuild and IsInGuild() and (online .. " online roster entries • " .. total .. " listed") or "Not currently in a guild.")
+  if c and c.DB and c.DB.profiles then
+    local profileCount, recipeCount, professions = 0, 0, {}
+    for _, profile in pairs(c.DB.profiles) do
+      profileCount = profileCount + 1
+      for profession, detail in pairs(profile.professions or {}) do
+        professions[profession] = true
+        if type(detail) == "table" then recipeCount = recipeCount + #(detail.recipes or {}) end
+      end
+      for _ in pairs(profile.recipes or {}) do recipeCount = recipeCount + 1 end
+    end
+    local names = {}
+    for profession in pairs(professions) do names[#names+1] = profession end
+    table.sort(names)
+    local shown = {}
+    for i=1,math.min(6,#names) do shown[#shown+1] = names[i] end
+    AddLine("|cffffd27aCRAFTING DIRECTORY|r", "GameFontNormal")
+    AddLine(profileCount .. " crafter profiles stored • " .. #names .. " profession types recorded")
+    if #shown > 0 then AddLine("Professions: " .. table.concat(shown, ", ") .. (#names > #shown and " …" or "")) end
+    AddLine("Recipe records are held locally and grow as members scan and share their professions.")
+  else
+    AddLine("|cffffd27aCRAFTING DIRECTORY|r", "GameFontNormal")
+    AddLine("Install/load Crafting Directory to see stored crafter profiles here.")
+  end
   AddLine(" ")
-  AddLine("|cffd9c49aYour Guild Hall is a local dashboard. Addon modules appear here when installed and loaded. Guild-wide sharing is handled by each module's approved sync features.|r", "GameFontHighlightSmall")
-  body:SetHeight(math.max(300, #rows * 25 + 30))
+  AddLine("|cffd9c49aYour Guild Hall is a local dashboard. Roster and crafting figures reflect data available to this client; guild-wide sharing depends on members using the relevant sync features.|r", "GameFontHighlightSmall")
+  body:SetHeight(math.max(300, -cursorY + 30))
 end
 local function OpenModule(name)
   local module = (Core.modules or {})[name]
