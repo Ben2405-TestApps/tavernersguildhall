@@ -60,6 +60,7 @@ function Hall:Refresh()
   AddLine("/tdungeon  —  Dungeon journal")
   AddLine("/tcd  —  Crafting directory (when installed)")
   AddLine("/tammoguard  —  Ammo Guard (when installed)")
+  AddLine("/tbackup  —  Export or restore Taverners addon data")
   AddLine(" ")
   local roster = Core.Guild:RefreshRoster()
   local online, total = 0, 0
