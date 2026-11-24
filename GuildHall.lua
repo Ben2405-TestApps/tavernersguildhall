@@ -199,7 +199,7 @@ end
 local function FindRecord(list,id)
   for _,record in ipairs(list or {}) do if record.id==id then return record end end
 end
-local function PackRecord(kind,record)
+local function PackRecord(kind,record,operation)
   local values={}
   if kind=="notice" then values={record.text}
   elseif kind=="bank" then values={record.item,record.quantity,record.action}
@@ -208,14 +208,14 @@ local function PackRecord(kind,record)
   elseif kind=="group" then values={record.role,record.dungeon,record.filled and "1" or "0"}
   elseif kind=="pvp" then values={record.result,record.honour or 0}
   else return nil end
-  local parts={"1","PUT",kind,Encode(record.id),tostring(record.created or record.updated or 0),Encode(record.author)}
+  local parts={"1",operation or "PUT",kind,Encode(record.id),tostring(record.created or record.updated or 0),Encode(record.author)}
   for _,value in ipairs(values) do parts[#parts+1]=Encode(value) end
   local packet=table.concat(parts,"|")
   if #packet>240 then return nil end
   return packet
 end
-local function SendRecord(kind,record,channel,target)
-  local packet=PackRecord(kind,record)
+local function SendRecord(kind,record,channel,target,operation)
+  local packet=PackRecord(kind,record,operation)
   if packet then Core.Comm:Send(SYNC_PREFIX,packet,channel or "GUILD",target)
   else Core.Notifications:Print("A guild record was too long to synchronise.") end
 end
@@ -235,24 +235,32 @@ local function MergePacket(fields,sender)
   local list=RecordList(kind)
   if not list then return false end
   local id=Decode(fields[4])
-  if id=="" or FindRecord(list,id) then return false end
+  if id=="" then return false end
+  local existing=FindRecord(list,id)
+  if existing and fields[2]~="UPD" then return false end
   local record={id=id,created=tonumber(fields[5]) or Core.Util:Now(),author=Decode(fields[6])}
   if kind=="notice" then record.text=Decode(fields[7])
-  elseif kind=="bank" then record.item=Decode(fields[7]); record.quantity=tonumber(fields[8]) or 0; record.action=Decode(fields[9])
+  elseif kind=="bank" then record.item=Decode(fields[7]); record.quantity=tonumber(fields[8]) or 0; record.action=Decode(fields[9]); record.owner=record.author
   elseif kind=="goal" then record.text=Decode(fields[7]); record.done=fields[8]=="1"
   elseif kind=="event" then record.date=Decode(fields[7]); record.time=Decode(fields[8]); record.title=Decode(fields[9])
-  elseif kind=="group" then record.role=Decode(fields[7]); record.dungeon=Decode(fields[8]); record.filled=fields[9]=="1"
+  elseif kind=="group" then record.role=Decode(fields[7]); record.dungeon=Decode(fields[8]); record.filled=fields[9]=="1"; record.author=record.author
   elseif kind=="pvp" then
     record.result=Decode(fields[7]); record.honour=tonumber(fields[8]) or 0
     DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
-    DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
-    if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
-    elseif record.result=="loss" then DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
+    if record.result=="win" or record.result=="loss" then
+      DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
+      if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
+      else DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
+    end
     DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
   end
   if #tostring(record.text or record.title or record.item or record.dungeon or "")>100 then return false end
-  list[#list+1]=record
-  if #list>250 then table.remove(list,1) end
+  if existing then
+    for key,value in pairs(record) do existing[key]=value end
+  else
+    list[#list+1]=record
+    if #list>250 then table.remove(list,1) end
+  end
   if Hall.Refresh then Hall:Refresh() end
   return true
 end
@@ -400,6 +408,8 @@ local function MarkGoalDone(index)
   if not goal then return false end
   goal.done = true
   goal.completed = Core.Util:Now()
+  SendRecord("goal",goal,"GUILD",nil,"UPD")
+  Hall:Refresh()
   return true
 end
 
@@ -408,13 +418,13 @@ local function HandleGuildCommand(msg)
   command = (command or ""):lower()
   if command == "note" then
     local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
-    if action == "add" and AddGuildNotice(text) then Core.Notifications:Print("Notice added to your local Guild Hall board.")
+    if action == "add" and AddGuildNotice(text) then Core.Notifications:Print("Notice shared with online Taverners members.")
     else Core.Notifications:Print("Usage: /tgh note add <message>") end
   elseif command == "bank" then
     local action, tail = (rest or ""):match("^(%S+)%s*(.-)$")
     if action == "add" then
       local item, quantity, direction = (tail or ""):match("^(.-)%s+(%d+)%s*(%S*)$")
-      if AddBankEntry(item, quantity, direction) then Core.Notifications:Print("Guild bank ledger entry saved locally.")
+      if AddBankEntry(item, quantity, direction) then Core.Notifications:Print("Contribution shared with online Taverners members.")
       else Core.Notifications:Print("Usage: /tgh bank add <item> <quantity> [deposit/withdrawal]") end
     else Core.Notifications:Print("Usage: /tgh bank add <item> <quantity> [deposit/withdrawal]") end
   elseif command == "goal" then
