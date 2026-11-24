@@ -142,7 +142,11 @@ local function EnsureLists()
   DB.noticeboard = DB.noticeboard or {}
   DB.bank = DB.bank or {}
   DB.goals = DB.goals or {}
-  DB.pvp = DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
+  DB.pvp = DB.pvp or {}
+  DB.pvp.battlegrounds = tonumber(DB.pvp.battlegrounds) or 0
+  DB.pvp.wins = tonumber(DB.pvp.wins) or 0
+  DB.pvp.losses = tonumber(DB.pvp.losses) or 0
+  DB.pvp.honour = tonumber(DB.pvp.honour) or 0
 end
 EnsureLists()
 
@@ -249,4 +253,12 @@ local function HandleGuildCommand(msg)
     Core.Notifications:Print("Guild Hall: /tgh | note add | bank add | goal add/done | pvp win/loss/honour")
   end
   Hall:Refresh()
+end
+
+-- Rebind after local command handlers have been declared (Lua lexical scope).
+SlashCmdList.TAVERNERSGUILDHALL=function(msg)
+  local value=tostring(msg or "")
+  if value:lower()=="refresh" then Hall:Refresh()
+  elseif value=="" then Hall:Toggle()
+  else HandleGuildCommand(value) end
 end
