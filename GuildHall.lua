@@ -65,6 +65,13 @@ function Hall:Refresh()
   AddLine("|cffd9c49aYour Guild Hall is a local dashboard. Addon modules appear here when installed and loaded. Guild-wide sharing is handled by each module's approved sync features.|r", "GameFontHighlightSmall")
   body:SetHeight(math.max(300, #rows * 25 + 30))
 end
+local function OpenModule(name)
+  local module = (Core.modules or {})[name]
+  if name == "CraftingDirectory" and _G.TCD and _G.TCD.ToggleUI then _G.TCD:ToggleUI(); return end
+  if module and module.UI and module.UI.Toggle then module.UI:Toggle()
+  elseif module and module.UI and module.UI.ToggleUI then module.UI:ToggleUI()
+  else Core.Notifications:Print(name .. " is not loaded.") end
+end
 local function Build()
   if frame then return end
   frame = CreateFrame("Frame", "TavernersGuildHallFrame", UIParent)
@@ -81,6 +88,14 @@ local function Build()
   local refresh=CreateFrame("Button",nil,frame,"UIPanelButtonTemplate")
   refresh:SetSize(100,24); refresh:SetPoint("TOPRIGHT",-42,-48); refresh:SetText("Refresh")
   refresh:SetScript("OnClick",function() Hall:Refresh() end)
+  local actions={{"Quests","QuestCompanion"},{"Gear","GearGuide"},{"Dungeons","DungeonTool"},{"Crafting","CraftingDirectory"},{"Ammo","AmmoGuard"}}
+  local x=18
+  for _,action in ipairs(actions) do
+    local b=CreateFrame("Button",nil,frame,"UIPanelButtonTemplate")
+    b:SetSize(118,24); b:SetPoint("TOPLEFT",x,-48); b:SetText(action[1])
+    b:SetScript("OnClick",function() OpenModule(action[2]) end)
+    x=x+124
+  end
   local scroll=CreateFrame("ScrollFrame","TavernersGuildHallScroll",frame,"UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT",18,-52); scroll:SetPoint("BOTTOMRIGHT",-36,18)
   body=CreateFrame("Frame",nil,scroll); body:SetSize(660,400); scroll:SetScrollChild(body)
