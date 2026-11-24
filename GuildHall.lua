@@ -290,7 +290,8 @@ local function MergePacket(fields,sender)
     DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
   end
   local permission=ActionForRecord(kind,record)
-  if permission and (not CanAction(permission,sender) or not CanAction(permission,author)) then
+  local senderAllowed=(fields[2]=="SYNC") or CanAction(permission,sender)
+  if permission and (not senderAllowed or not CanAction(permission,author)) then
     Core.Diagnostics:Log("WARN","Rejected unauthorised guild record from "..tostring(sender))
     return false
   end
@@ -463,6 +464,7 @@ local function AddGoal(text)
   return true
 end
 local function MarkGoalDone(index)
+  if not RequirePermission("goal") then return false end
   local goal = DB.goals[tonumber(index) or 0]
   if not goal then return false end
   goal.done = true
