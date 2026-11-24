@@ -36,7 +36,7 @@ function Hall:Refresh()
   local q = modules.QuestCompanion
   local g = modules.GearGuide
   local d = modules.DungeonTool
-  local c = modules.CraftingDirectory
+  local c = modules.CraftingDirectory or _G.TCD
   local a = modules.AmmoGuard
   local function status(name, mod, detail)
     AddLine((mod and "|cff55dd77●|r " or "|cffcc7770○|r ") .. name .. (detail and ("  —  " .. detail) or (mod and "  —  Ready" or "  —  Not loaded")))
@@ -51,8 +51,8 @@ function Hall:Refresh()
   AddLine("/tquest  —  Quest and leveling companion")
   AddLine("/tgear  —  Gear guide")
   AddLine("/tdungeon  —  Dungeon journal")
-  AddLine("/tcraft  —  Crafting directory (when installed)")
-  AddLine("/tammo  —  Ammo Guard (when installed)")
+  AddLine("/tcd  —  Crafting directory (when installed)")
+  AddLine("/tammoguard  —  Ammo Guard (when installed)")
   AddLine(" ")
   local roster = Core.Guild:RefreshRoster()
   local online, total = 0, 0
