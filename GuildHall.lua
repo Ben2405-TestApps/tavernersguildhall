@@ -88,9 +88,10 @@ local function Build()
     local actions={{"Quests","QuestCompanion"},{"Gear","GearGuide"},{"Dungeons","DungeonTool"},{"Crafting","CraftingDirectory"},{"Ammo","AmmoGuard"}}
   local x=18
   for _,action in ipairs(actions) do
+    local label, moduleName = action[1], action[2]
     local b=CreateFrame("Button",nil,frame,"UIPanelButtonTemplate")
-    b:SetSize(118,24); b:SetPoint("TOPLEFT",x,-48); b:SetText(action[1])
-    b:SetScript("OnClick",function() OpenModule(action[2]) end)
+    b:SetSize(118,24); b:SetPoint("TOPLEFT",x,-48); b:SetText(label)
+    b:SetScript("OnClick",function() OpenModule(moduleName) end)
     x=x+124
   end
   local scroll=CreateFrame("ScrollFrame","TavernersGuildHallScroll",frame,"UIPanelScrollFrameTemplate")
