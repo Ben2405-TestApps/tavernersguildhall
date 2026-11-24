@@ -446,7 +446,8 @@ end
 
 local function AddGuildNotice(text)
   if not text or text == "" then return false end
-  PublishRecord("notice",{text=Core.Util:SafeText(text),done=false})
+  local ok=PublishRecord("notice",{text=Core.Util:SafeText(text),done=false})
+  if not ok then return false end
   while #DB.noticeboard > 30 do table.remove(DB.noticeboard,1) end
   return true
 end
@@ -454,14 +455,14 @@ local function AddBankEntry(item, quantity, action)
   if not item or item == "" then return false end
   quantity = tonumber(quantity)
   if not quantity or quantity <= 0 then return false end
-  PublishRecord("bank",{item=Core.Util:SafeText(item),quantity=math.floor(quantity),action=(action=="withdrawal" and "Withdrawal" or "Deposit"),owner=UnitName("player")})
+  local ok=PublishRecord("bank",{item=Core.Util:SafeText(item),quantity=math.floor(quantity),action=(action=="withdrawal" and "Withdrawal" or "Deposit"),owner=UnitName("player")})
+  if not ok then return false end
   while #DB.bank > 100 do table.remove(DB.bank,1) end
   return true
 end
 local function AddGoal(text)
   if not text or text == "" then return false end
-  PublishRecord("goal",{text=Core.Util:SafeText(text),done=false})
-  return true
+  return PublishRecord("goal",{text=Core.Util:SafeText(text),done=false})
 end
 local function MarkGoalDone(index)
   if not RequirePermission("goal") then return false end
@@ -519,8 +520,9 @@ local function HandleGuildCommand(msg)
     if action=="add" then
       local date, timeValue, title = (tail or ""):match("^(%S+)%s+(%S+)%s+(.+)$")
       if date and timeValue and title then
-        PublishRecord("event",{date=Core.Util:SafeText(date),time=Core.Util:SafeText(timeValue),title=Core.Util:SafeText(title)})
-        Core.Notifications:Print("Guild event shared with online Taverners members.")
+        if PublishRecord("event",{date=Core.Util:SafeText(date),time=Core.Util:SafeText(timeValue),title=Core.Util:SafeText(title)}) then
+          Core.Notifications:Print("Guild event shared with online Taverners members.")
+        end
       else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
     else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
   elseif command == "group" then
@@ -528,11 +530,13 @@ local function HandleGuildCommand(msg)
     if action=="add" then
       local role, dungeon = (tail or ""):match("^(%S+)%s+(.+)$")
       if role and dungeon then
-        PublishRecord("group",{role=Core.Util:SafeText(role),dungeon=Core.Util:SafeText(dungeon),filled=false})
-        Core.Notifications:Print("Group request shared with online Taverners members.")
+        if PublishRecord("group",{role=Core.Util:SafeText(role),dungeon=Core.Util:SafeText(dungeon),filled=false}) then
+          Core.Notifications:Print("Group request shared with online Taverners members.")
+        end
       else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
     else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
   elseif command == "pvp" then
+    if not RequirePermission("pvp") then return end
     local action, amount = (rest or ""):match("^(%S+)%s*(.-)$")
     if action == "win" or action=="loss" then
       DB.pvp.battlegrounds=DB.pvp.battlegrounds+1
