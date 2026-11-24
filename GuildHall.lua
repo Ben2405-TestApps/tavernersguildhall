@@ -139,7 +139,6 @@ ev:RegisterEvent("GUILD_ROSTER_UPDATE")
 ev:SetScript("OnEvent",function(_,event)
   if event=="PLAYER_LOGIN" then
     Build(); Hall:Refresh()
-    if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) end
   elseif event=="GUILD_ROSTER_UPDATE" then
     Core.Guild:RefreshRoster()
   end
@@ -289,7 +288,7 @@ Core.Comm:Register(SYNC_PREFIX,function(message,channel,sender)
     syncPeers[sender]={count=tonumber(fields[3]) or 0}
   elseif fields[2]=="SYNCREQ" then
     SendSnapshot(sender)
-  elseif fields[2]=="PUT" then
+  elseif fields[2]=="PUT" or fields[2]=="UPD" then
     MergePacket(fields,sender)
   end
 end)
@@ -474,3 +473,11 @@ SlashCmdList.TAVERNERSGUILDHALL=function(msg)
   elseif value=="" then Hall:Toggle()
   else HandleGuildCommand(value) end
 end
+
+-- This frame is declared after BeginGuildSync so the callback closes over
+-- the local function (not a nil global) when PLAYER_LOGIN fires.
+local syncEventFrame=CreateFrame("Frame")
+syncEventFrame:RegisterEvent("PLAYER_LOGIN")
+syncEventFrame:SetScript("OnEvent",function()
+  if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) else BeginGuildSync() end
+end)
