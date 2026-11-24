@@ -339,7 +339,7 @@ function Hall:Refresh()
   AddLine(" ")
   AddLine("GUILD BANK LEDGER", "GameFontNormal")
   local entries = #DB.bank
-  AddLine(entries .. " locally recorded material / contribution entries.")
+  AddLine(entries .. " shared contribution-ledger entries.")
   for i=math.max(1,entries-2),entries do
     local item = DB.bank[i]
     if item then AddLine(tostring(item.action) .. " " .. tostring(item.quantity) .. " x " .. tostring(item.item) .. " — " .. tostring(item.owner)) end
@@ -384,7 +384,7 @@ function Hall:Refresh()
       AddLine(tostring(request.dungeon).." — looking for "..tostring(request.role).." ("..tostring(request.author)..")")
     end
   end
-  if groupCount==0 then AddLine("No local group requests. Use /tgh group add <role> <dungeon>.") end
+  if groupCount==0 then AddLine("No open group requests. Use /tgh group add <role> <dungeon>.") end
   body:SetHeight(math.max(300, -cursorY + 30))
 end
 
@@ -435,7 +435,7 @@ local function HandleGuildCommand(msg)
     else Core.Notifications:Print("Usage: /tgh bank add <item> <quantity> [deposit/withdrawal]") end
   elseif command == "goal" then
     local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
-    if action == "add" and AddGoal(text) then Core.Notifications:Print("Adventure goal added.")
+    if action == "add" and AddGoal(text) then Core.Notifications:Print("Adventure goal shared with online Taverners members.")
     elseif action == "done" and MarkGoalDone(text) then Core.Notifications:Print("Adventure goal completed.")
     else Core.Notifications:Print("Usage: /tgh goal add <goal> OR /tgh goal done <number>") end
   elseif command == "event" then
