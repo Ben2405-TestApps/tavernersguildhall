@@ -267,7 +267,12 @@ local function SendSnapshot(target)
   local kinds={"notice","bank","goal","event","group","pvp"}
   for _,kind in ipairs(kinds) do
     local list=RecordList(kind)
-    for _,record in ipairs(list or {}) do SendRecord(kind,record,"WHISPER",target) end
+    for _,record in ipairs(list or {}) do
+      record.id=record.id or NextRecordID()
+      record.created=record.created or Core.Util:Now()
+      record.author=record.author or record.owner or UnitName("player")
+      SendRecord(kind,record,"WHISPER",target)
+    end
   end
 end
 local function GuildSender(sender)
@@ -415,7 +420,9 @@ end
 local function HandleGuildCommand(msg)
   local command, rest = tostring(msg or ""):match("^(%S+)%s*(.-)$")
   command = (command or ""):lower()
-  if command == "note" then
+  if command == "sync" then
+    BeginGuildSync()
+  elseif command == "note" then
     local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
     if action == "add" and AddGuildNotice(text) then Core.Notifications:Print("Notice shared with online Taverners members.")
     else Core.Notifications:Print("Usage: /tgh note add <message>") end
@@ -461,7 +468,7 @@ local function HandleGuildCommand(msg)
     else Core.Notifications:Print("Usage: /tgh pvp win | loss | honour <amount>"); return end
     Core.Notifications:Print("PvP record updated.")
   else
-    Core.Notifications:Print("Guild Hall: /tgh | note add | bank add | goal add/done | event add | group add | pvp win/loss/honour")
+    Core.Notifications:Print("Guild Hall: /tgh | sync | note add | bank add | goal add/done | event add | group add | pvp win/loss/honour")
   end
   Hall:Refresh()
 end
