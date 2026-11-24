@@ -580,6 +580,22 @@ end
 
 -- This frame is declared after BeginGuildSync so the callback closes over
 -- the local function (not a nil global) when PLAYER_LOGIN fires.
+local function TrackBattlefieldStatus()
+  if type(GetBattlefieldStatus)~="function" then return end
+  local active,mapName=false,nil
+  for queue=1,3 do
+    local status,name=GetBattlefieldStatus(queue)
+    if status=="active" then active=true; mapName=name; break end
+  end
+  if active and not DB.autoPvPActive then
+    DB.autoPvPActive=true
+    DB.autoPvPStartedAt=time and time() or Core.Util:Now()
+    DB.autoPvPMap=mapName
+  elseif not active then
+    DB.autoPvPActive=nil
+  end
+end
+
 local function RecordAutomaticBattleground()
   if not DB.autoPvP or not IsInGuild or not IsInGuild() then return end
   if type(GetBattlefieldWinner)~="function" or type(GetNumBattlefieldScores)~="function" or type(GetBattlefieldScore)~="function" then return end
@@ -612,7 +628,7 @@ local function RecordAutomaticBattleground()
   end
   if not playerScore or playerScore.faction==nil then return end
   local result=(winner==255) and "draw" or (winner==playerScore.faction and "win" or "loss")
-  local matchKey=table.concat({tostring(mapName),tostring(runtime),tostring(winner),tostring(playerScore.killingBlows),tostring(playerScore.deaths)},"|")
+  local matchKey=table.concat({tostring(DB.autoPvPStartedAt or runtime),tostring(DB.autoPvPMap or mapName),tostring(winner),tostring(playerScore.killingBlows),tostring(playerScore.deaths)},"|")
   if DB.lastAutoPvPMatch==matchKey then return end
   if not RequirePermission("pvp") then return end
   DB.lastAutoPvPMatch=matchKey
@@ -630,9 +646,13 @@ end
 local syncEventFrame=CreateFrame("Frame")
 syncEventFrame:RegisterEvent("PLAYER_LOGIN")
 syncEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_SCORE")
+syncEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
+syncEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 syncEventFrame:SetScript("OnEvent",function(_,event)
   if event=="PLAYER_LOGIN" then
     if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) else BeginGuildSync() end
+  elseif event=="UPDATE_BATTLEFIELD_STATUS" or event=="PLAYER_ENTERING_WORLD" then
+    TrackBattlefieldStatus()
   elseif event=="UPDATE_BATTLEFIELD_SCORE" then
     RecordAutomaticBattleground()
   end
