@@ -46,7 +46,7 @@ function Hall:Refresh()
   local function status(name, mod, detail)
     AddLine((mod and "|cff55dd77●|r " or "|cffcc7770○|r ") .. name .. (detail and ("  —  " .. detail) or (mod and "  —  Ready" or "  —  Not loaded")))
   end
-  status("Quest Companion", q, q and (tostring(CountQuests(q) or 0) .. " active quests") or nil)
+  status("Quest Companion", q, q and (q.GetDashboardSummary and q:GetDashboardSummary() or (tostring(CountQuests(q) or 0) .. " active quests")) or nil)
   status("Gear Guide", g, g and (g.GetDashboardSummary and g:GetDashboardSummary() or "Profile and equipped gear") or nil)
   status("Dungeon Tool", d, d and (d.GetDashboardSummary and d:GetDashboardSummary() or "Dungeon journal and maps") or nil)
   status("Crafting Directory", c, c and "Guild crafters and recipes" or nil)
