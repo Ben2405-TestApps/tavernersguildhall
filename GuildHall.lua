@@ -2,7 +2,9 @@ local ADDON, ns = ...
 local Core = _G.TavernersCore
 if not Core then return end
 
-local DB = Core.Database:Register("TavernersGuildHallDB", {version=3, minimised=false, noticeboard={}, bank={}, pvp={battlegrounds=0,wins=0,losses=0,honour=0}, goals={}, permissions={notice=1,event=1,bankDeposit=99,bankWithdraw=1,goal=99,group=99,pvp=99}}, 3)
+local DB = Core.Database:Register("TavernersGuildHallDB", {version=4, minimised=false, noticeboard={}, bank={}, pvp={battlegrounds=0,wins=0,losses=0,honour=0}, pvpLog={}, autoPvP=true, goals={}, permissions={notice=1,event=1,bankDeposit=99,bankWithdraw=1,goal=99,group=99,pvp=99}}, 4)
+DB.pvpLog = DB.pvpLog or {}
+Core.Settings:Register("GuildHall", DB, {autoPvP={label="Automatically record battleground results",type="boolean",default=true}})
 local Hall = {db=DB}
 Core:RegisterModule("GuildHall", Hall)
 
@@ -229,7 +231,7 @@ local function PackRecord(kind,record,operation)
   elseif kind=="goal" then values={record.text,record.done and "1" or "0"}
   elseif kind=="event" then values={record.date,record.time,record.title}
   elseif kind=="group" then values={record.role,record.dungeon,record.filled and "1" or "0"}
-  elseif kind=="pvp" then values={record.result,record.honour or 0}
+  elseif kind=="pvp" then values={record.result,record.honour or 0,record.killingBlows or 0,record.honorableKills or 0,record.deaths or 0,record.damage or 0,record.healing or 0,record.map or "",record.matchKey or ""}
   else return nil end
   local parts={"1",operation or "PUT",kind,Encode(record.id),tostring(record.created or record.updated or 0),Encode(record.author)}
   for _,value in ipairs(values) do parts[#parts+1]=Encode(value) end
@@ -281,6 +283,9 @@ local function MergePacket(fields,sender)
   elseif kind=="group" then record.role=Decode(fields[7]); record.dungeon=Decode(fields[8]); record.filled=fields[9]=="1"; record.author=record.author
   elseif kind=="pvp" then
     record.result=Decode(fields[7]); record.honour=tonumber(fields[8]) or 0
+    record.killingBlows=tonumber(fields[9]) or 0; record.honorableKills=tonumber(fields[10]) or 0
+    record.deaths=tonumber(fields[11]) or 0; record.damage=tonumber(fields[12]) or 0
+    record.healing=tonumber(fields[13]) or 0; record.map=Decode(fields[14]); record.matchKey=Decode(fields[15])
     DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
     if record.result=="win" or record.result=="loss" then
       DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
@@ -404,7 +409,16 @@ function Hall:Refresh()
     " • Wins: " .. tostring(DB.pvp.wins or 0) ..
     " • Losses: " .. tostring(DB.pvp.losses or 0) ..
     " • Honour recorded: " .. tostring(DB.pvp.honour or 0))
-  AddLine("Use /tgh pvp win, /tgh pvp loss, or /tgh pvp honour <amount>.")
+  AddLine("Battleground results are recorded automatically when the scoreboard is available. Manual commands: /tgh pvp win, /tgh pvp loss, /tgh pvp honour <amount>.")
+  local recent=0
+  for i=#DB.pvpLog,math.max(1,#DB.pvpLog-4),-1 do
+    local match=DB.pvpLog[i]
+    if match and match.result~="honour" then
+      AddLine(tostring(match.result):upper().." — "..tostring(match.map or "Battleground").." • "..tostring(match.killingBlows or 0).." KB / "..tostring(match.deaths or 0).." deaths • "..tostring(match.honour or 0).." bonus honour")
+      recent=recent+1
+    end
+  end
+  if recent==0 then AddLine("No battleground match details recorded yet.") end
 
   AddLine(" ")
   AddLine("ADVENTURE JOURNAL", "GameFontNormal")
@@ -563,8 +577,60 @@ end
 
 -- This frame is declared after BeginGuildSync so the callback closes over
 -- the local function (not a nil global) when PLAYER_LOGIN fires.
+local function RecordAutomaticBattleground()
+  if not DB.autoPvP or not IsInGuild or not IsInGuild() then return end
+  if type(GetBattlefieldWinner)~="function" or type(GetNumBattlefieldScores)~="function" or type(GetBattlefieldScore)~="function" then return end
+  local winner=GetBattlefieldWinner()
+  if winner==nil then return end
+  local runtime=type(GetBattlefieldInstanceRunTime)=="function" and GetBattlefieldInstanceRunTime() or nil
+  if not runtime then
+    Core.Diagnostics:Log("WARN","Automatic PvP result skipped: battleground runtime unavailable for safe deduplication.")
+    return
+  end
+  local playerName=UnitName("player")
+  local playerKey=Core.Identity:ShortName(playerName)
+  local mapName
+  if GetBattlefieldStatus then
+    for queue=1,3 do
+      local status,name=GetBattlefieldStatus(queue)
+      if status=="active" or status=="leave" then mapName=name; break end
+    end
+  end
+  mapName=mapName or (GetZoneText and GetZoneText()) or "Battleground"
+  local playerScore
+  for i=1,(GetNumBattlefieldScores() or 0) do
+    local name,kb,hk,deaths,honour,faction,_,_,_,damage,healing=GetBattlefieldScore(i)
+    if name and Core.Identity:ShortName(name)==playerKey then
+      playerScore={killingBlows=tonumber(kb) or 0,honorableKills=tonumber(hk) or 0,
+        deaths=tonumber(deaths) or 0,honour=tonumber(honour) or 0,
+        faction=tonumber(faction),damage=tonumber(damage) or 0,healing=tonumber(healing) or 0}
+      break
+    end
+  end
+  if not playerScore or playerScore.faction==nil then return end
+  local result=(winner==255) and "draw" or (winner==playerScore.faction and "win" or "loss")
+  local matchKey=table.concat({tostring(mapName),tostring(runtime),tostring(winner),tostring(playerScore.killingBlows),tostring(playerScore.deaths)},"|")
+  if DB.lastAutoPvPMatch==matchKey then return end
+  if not RequirePermission("pvp") then return end
+  DB.lastAutoPvPMatch=matchKey
+  DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
+  if result=="win" then DB.pvp.wins=DB.pvp.wins+1
+  elseif result=="loss" then DB.pvp.losses=DB.pvp.losses+1 end
+  DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+playerScore.honour
+  PublishRecord("pvp",{result=result,honour=playerScore.honour,killingBlows=playerScore.killingBlows,
+    honorableKills=playerScore.honorableKills,deaths=playerScore.deaths,damage=playerScore.damage,
+    healing=playerScore.healing,map=Core.Util:SafeText(mapName),matchKey=matchKey,automatic=true})
+  Core.Notifications:Print("Battleground result recorded: "..result.." — "..mapName..".")
+  Hall:Refresh()
+end
+
 local syncEventFrame=CreateFrame("Frame")
 syncEventFrame:RegisterEvent("PLAYER_LOGIN")
-syncEventFrame:SetScript("OnEvent",function()
-  if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) else BeginGuildSync() end
+syncEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_SCORE")
+syncEventFrame:SetScript("OnEvent",function(_,event)
+  if event=="PLAYER_LOGIN" then
+    if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) else BeginGuildSync() end
+  elseif event=="UPDATE_BATTLEFIELD_SCORE" then
+    RecordAutomaticBattleground()
+  end
 end)
