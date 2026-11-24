@@ -49,3 +49,22 @@ The Guild Hall now replicates noticeboard posts, contribution-ledger entries, ad
 - No external server or website is required.
 
 **Important limitations:** this is peer-to-peer replication, not a central authoritative database. At least one online member with the relevant records must be running the compatible addons for a returning player to catch up. The game does not allow an addon to write directly into the real guild bank; the bank feature is a contribution ledger only. Existing pre-sync PvP totals remain local; new PvP entries are shared. Guild-wide sharing has not yet been verified in the live WoW Forever client.
+
+
+## Guild-wide permissions (0.4.0)
+
+Guild Hall applies guild-rank thresholds to shared records. Rank index 0 is the Guild Master; lower numbers are more senior. Defaults:
+
+| Action | Allowed ranks |
+|---|---|
+| Post notices | Guild Master and rank 1 |
+| Create events | Guild Master and rank 1 |
+| Bank deposits | All ranks |
+| Bank withdrawals | Guild Master and rank 1 |
+| Add/complete adventure goals | All ranks |
+| Create group requests | All ranks |
+| Record PvP results | All ranks |
+
+Use `/tgh permissions` to view thresholds. Only the Guild Master can change them with `/tgh permissions set <action> <rank-index>`. Supported actions: `notice`, `event`, `bankDeposit`, `bankWithdraw`, `goal`, `group`, and `pvp`. The rank threshold is inclusive: rank 1 permits rank indices 0 and 1.
+
+The Guild Master's permission settings are shared with online members during Guild Hall handshakes and broadcast when changed. Members exchange records peer-to-peer and retain local SavedVariables copies. This is addon-level moderation, not server-enforced security: modified clients can bypass local checks, and addon messages are not cryptographically authenticated. Use actual in-game guild rank permissions for sensitive guild-bank access.
