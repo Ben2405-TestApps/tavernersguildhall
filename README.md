@@ -22,3 +22,17 @@ The Dungeon Tool merges the curated dungeon quest records exposed by Quest Compa
 
 ## Compatibility
 Interface target 16001. Requires TavernersCore. Live WoW Forever testing is still required; roster and addon-module availability depend on the client APIs and which addons are enabled.
+
+
+## Guild services (0.2.0)
+
+The Guild Hall dashboard now includes local noticeboard posts, a local guild-bank contribution ledger, manual PvP records, an adventure-goal checklist, a local event calendar and a local group-finder board. Commands:
+
+- `/tgh note add <message>`
+- `/tgh bank add <item> <quantity> [deposit/withdrawal]`
+- `/tgh goal add <goal>` and `/tgh goal done <number>`
+- `/tgh event add <date> <time> <title>`
+- `/tgh group add <role> <dungeon>`
+- `/tgh pvp win`, `/tgh pvp loss`, `/tgh pvp honour <amount>`
+
+These records are currently local to the character and are not shared with guild members. The ledger is not an authoritative live guild-bank balance.
