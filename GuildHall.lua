@@ -287,10 +287,10 @@ local function MergePacket(fields,sender)
     record.deaths=tonumber(fields[11]) or 0; record.damage=tonumber(fields[12]) or 0
     record.healing=tonumber(fields[13]) or 0; record.map=Decode(fields[14]); record.matchKey=Decode(fields[15])
     DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
-    if record.result=="win" or record.result=="loss" then
+    if record.result=="win" or record.result=="loss" or record.result=="draw" then
       DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
       if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
-      else DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
+      elseif record.result=="loss" then DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
     end
     DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
   end
