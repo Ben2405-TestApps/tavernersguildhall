@@ -68,3 +68,14 @@ Guild Hall applies guild-rank thresholds to shared records. Rank index 0 is the 
 Use `/tgh permissions` to view thresholds. Only the Guild Master can change them with `/tgh permissions set <action> <rank-index>`. Supported actions: `notice`, `event`, `bankDeposit`, `bankWithdraw`, `goal`, `group`, and `pvp`. The rank threshold is inclusive: rank 1 permits rank indices 0 and 1.
 
 The Guild Master's permission settings are shared with online members during Guild Hall handshakes and broadcast when changed. Members exchange records peer-to-peer and retain local SavedVariables copies. This is addon-level moderation, not server-enforced security: modified clients can bypass local checks, and addon messages are not cryptographically authenticated. Use actual in-game guild rank permissions for sensitive guild-bank access.
+
+
+## Automatic battleground tracking (0.5.0)
+
+- Added an enabled-by-default automatic battleground result recorder, configurable in Taverners Core's `/tsettings` panel.
+- When the client reports a completed battleground and provides a scoreboard row for the player, Guild Hall records win/loss/draw, map, killing blows, honorable kills, deaths, bonus honour, damage and healing.
+- The match runtime and scoreboard summary are used to prevent the same result being recorded repeatedly from multiple scoreboard updates.
+- Match records are shared with online Taverners Guild Hall users and appear in the PvP section.
+- Manual `/tgh pvp win|loss|honour` commands remain available.
+
+Automatic tracking depends on the Forever client exposing the Classic battleground scoreboard APIs and an instance runtime. If either is unavailable, the addon skips the automatic record rather than guessing or creating duplicate results. Live-client testing is required.
