@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local Core = _G.TavernersCore
 if not Core then return end
 
-local DB = Core.Database:Register("TavernersGuildHallDB", {version=1, minimised=false}, 1)
+local DB = Core.Database:Register("TavernersGuildHallDB", {version=2, minimised=false, noticeboard={}, bank={}, pvp={battlegrounds=0,wins=0,losses=0,honour=0}, goals={}}, 2)
 local Hall = {db=DB}
 Core:RegisterModule("GuildHall", Hall)
 
@@ -132,5 +132,121 @@ function Hall:Toggle()
 end
 SLASH_TAVERNERSGUILDHALL1="/tgh"; SLASH_TAVERNERSGUILDHALL2="/guildhall"
 SlashCmdList=SlashCmdList or {}
-SlashCmdList.TAVERNERSGUILDHALL=function(msg) if tostring(msg or ""):lower()=="refresh" then Hall:Refresh() else Hall:Toggle() end end
+SlashCmdList.TAVERNERSGUILDHALL=function(msg) local value=tostring(msg or ""); if value:lower()=="refresh" then Hall:Refresh() elseif value=="" then Hall:Toggle() else HandleGuildCommand(value) end end
 local ev=CreateFrame("Frame"); ev:RegisterEvent("PLAYER_LOGIN"); ev:SetScript("OnEvent",function() Build(); Hall:Refresh() end)
+
+
+-- Guild services stored locally for now. Guild-wide sharing will use the
+-- Core communication layer after protocol and moderation testing.
+local function EnsureLists()
+  DB.noticeboard = DB.noticeboard or {}
+  DB.bank = DB.bank or {}
+  DB.goals = DB.goals or {}
+  DB.pvp = DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
+end
+EnsureLists()
+
+local previousRefresh = Hall.Refresh
+function Hall:Refresh()
+  previousRefresh(self)
+  if not body then return end
+  EnsureLists()
+  AddLine(" ")
+  AddLine("|cffffd27aTAVERNERS GUILD SERVICES|r", "GameFontNormal")
+  AddLine("NOTICEBOARD", "GameFontNormal")
+  local shown = 0
+  for i=#DB.noticeboard, math.max(1,#DB.noticeboard-4), -1 do
+    local post = DB.noticeboard[i]
+    if post then
+      AddLine((post.done and "|cff777777[Done]|r " or "|cffffd27a[Open]|r ") .. tostring(post.text))
+      shown = shown + 1
+    end
+  end
+  if shown == 0 then AddLine("No notices yet. Add one with /tgh note add <message>.") end
+
+  AddLine(" ")
+  AddLine("GUILD BANK LEDGER", "GameFontNormal")
+  local entries = #DB.bank
+  AddLine(entries .. " locally recorded material / contribution entries.")
+  for i=math.max(1,entries-2),entries do
+    local item = DB.bank[i]
+    if item then AddLine(tostring(item.action) .. " " .. tostring(item.quantity) .. " x " .. tostring(item.item) .. " — " .. tostring(item.owner)) end
+  end
+  AddLine("Record with /tgh bank add <item> <quantity> [deposit/withdrawal].")
+
+  AddLine(" ")
+  AddLine("PVP TRACKER", "GameFontNormal")
+  AddLine("Battlegrounds: " .. tostring(DB.pvp.battlegrounds or 0) ..
+    " • Wins: " .. tostring(DB.pvp.wins or 0) ..
+    " • Losses: " .. tostring(DB.pvp.losses or 0) ..
+    " • Honour recorded: " .. tostring(DB.pvp.honour or 0))
+  AddLine("Use /tgh pvp win, /tgh pvp loss, or /tgh pvp honour <amount>.")
+
+  AddLine(" ")
+  AddLine("ADVENTURE JOURNAL", "GameFontNormal")
+  local active = 0
+  for _, goal in ipairs(DB.goals) do
+    if not goal.done then active = active + 1; AddLine("• " .. tostring(goal.text)) end
+  end
+  AddLine(active .. " active goals. Add with /tgh goal add <goal>; finish with /tgh goal done <number>.")
+  body:SetHeight(math.max(300, -cursorY + 30))
+end
+
+local function AddGuildNotice(text)
+  if not text or text == "" then return false end
+  DB.noticeboard[#DB.noticeboard+1] = {text=Core.Util:SafeText(text), created=Core.Util:Now(), done=false, author=UnitName("player")}
+  while #DB.noticeboard > 30 do table.remove(DB.noticeboard,1) end
+  return true
+end
+local function AddBankEntry(item, quantity, action)
+  if not item or item == "" then return false end
+  quantity = tonumber(quantity)
+  if not quantity or quantity <= 0 then return false end
+  DB.bank[#DB.bank+1] = {item=Core.Util:SafeText(item),quantity=math.floor(quantity),action=(action=="withdrawal" and "Withdrawal" or "Deposit"),owner=UnitName("player"),created=Core.Util:Now()}
+  while #DB.bank > 100 do table.remove(DB.bank,1) end
+  return true
+end
+local function AddGoal(text)
+  if not text or text == "" then return false end
+  DB.goals[#DB.goals+1] = {text=Core.Util:SafeText(text),created=Core.Util:Now(),done=false}
+  return true
+end
+local function MarkGoalDone(index)
+  local goal = DB.goals[tonumber(index) or 0]
+  if not goal then return false end
+  goal.done = true
+  goal.completed = Core.Util:Now()
+  return true
+end
+
+local function HandleGuildCommand(msg)
+  local command, rest = tostring(msg or ""):match("^(%S+)%s*(.-)$")
+  command = (command or ""):lower()
+  if command == "note" then
+    local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action == "add" and AddGuildNotice(text) then Core.Notifications:Print("Notice added to your local Guild Hall board.")
+    else Core.Notifications:Print("Usage: /tgh note add <message>") end
+  elseif command == "bank" then
+    local action, tail = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action == "add" then
+      local item, quantity, direction = (tail or ""):match("^(.-)%s+(%d+)%s*(%S*)$")
+      if AddBankEntry(item, quantity, direction) then Core.Notifications:Print("Guild bank ledger entry saved locally.")
+      else Core.Notifications:Print("Usage: /tgh bank add <item> <quantity> [deposit/withdrawal]") end
+    else Core.Notifications:Print("Usage: /tgh bank add <item> <quantity> [deposit/withdrawal]") end
+  elseif command == "goal" then
+    local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action == "add" and AddGoal(text) then Core.Notifications:Print("Adventure goal added.")
+    elseif action == "done" and MarkGoalDone(text) then Core.Notifications:Print("Adventure goal completed.")
+    else Core.Notifications:Print("Usage: /tgh goal add <goal> OR /tgh goal done <number>") end
+  elseif command == "pvp" then
+    local action, amount = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action == "win" then DB.pvp.battlegrounds=DB.pvp.battlegrounds+1; DB.pvp.wins=DB.pvp.wins+1
+    elseif action == "loss" then DB.pvp.battlegrounds=DB.pvp.battlegrounds+1; DB.pvp.losses=DB.pvp.losses+1
+    elseif action == "honour" and tonumber(amount) and tonumber(amount)>0 then DB.pvp.honour=DB.pvp.honour+math.floor(tonumber(amount))
+    else Core.Notifications:Print("Usage: /tgh pvp win | loss | honour <amount>"); return end
+    Core.Notifications:Print("PvP record updated.")
+  else
+    Core.Notifications:Print("Guild Hall: /tgh | note add | bank add | goal add/done | pvp win/loss/honour")
+  end
+  Hall:Refresh()
+end
