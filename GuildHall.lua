@@ -133,7 +133,17 @@ end
 SLASH_TAVERNERSGUILDHALL1="/tgh"; SLASH_TAVERNERSGUILDHALL2="/guildhall"
 SlashCmdList=SlashCmdList or {}
 SlashCmdList.TAVERNERSGUILDHALL=function(msg) local value=tostring(msg or ""); if value:lower()=="refresh" then Hall:Refresh() elseif value=="" then Hall:Toggle() else HandleGuildCommand(value) end end
-local ev=CreateFrame("Frame"); ev:RegisterEvent("PLAYER_LOGIN"); ev:SetScript("OnEvent",function() Build(); Hall:Refresh() end)
+local ev=CreateFrame("Frame")
+ev:RegisterEvent("PLAYER_LOGIN")
+ev:RegisterEvent("GUILD_ROSTER_UPDATE")
+ev:SetScript("OnEvent",function(_,event)
+  if event=="PLAYER_LOGIN" then
+    Build(); Hall:Refresh()
+    if C_Timer and C_Timer.After then C_Timer.After(5,BeginGuildSync) end
+  elseif event=="GUILD_ROSTER_UPDATE" then
+    Core.Guild:RefreshRoster()
+  end
+end)
 
 
 -- Guild services stored locally for now. Guild-wide sharing will use the
@@ -151,6 +161,150 @@ local function EnsureLists()
   DB.pvp.honour = tonumber(DB.pvp.honour) or 0
 end
 EnsureLists()
+
+-- Guild-wide data replication. This is peer-to-peer addon messaging, not a
+-- server database: online Taverners clients exchange records and keep local
+-- SavedVariables copies. Offline clients catch up when they next log in.
+local SYNC_PREFIX = "TAVGH2"
+local syncPeers, syncCounter = {}, 0
+local function Encode(value)
+  return tostring(value or ""):gsub("([^%w%-%_%.~])", function(ch)
+    return string.format("%%%02X", string.byte(ch))
+  end)
+end
+local function Decode(value)
+  return tostring(value or ""):gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex,16))
+  end)
+end
+local function SplitPacket(message)
+  local fields = {}
+  for field in (tostring(message or "") .. "|"):gmatch("(.-)|") do
+    fields[#fields+1] = field
+  end
+  return fields
+end
+local function RecordList(kind)
+  if kind=="notice" then return DB.noticeboard end
+  if kind=="bank" then return DB.bank end
+  if kind=="goal" then return DB.goals end
+  if kind=="event" then return DB.events end
+  if kind=="group" then return DB.groups end
+  if kind=="pvp" then DB.pvpLog=DB.pvpLog or {}; return DB.pvpLog end
+end
+local function NextRecordID()
+  syncCounter=syncCounter+1
+  return tostring(UnitName("player") or "Unknown")..":"..tostring(Core.Util:Now())..":"..tostring(syncCounter)
+end
+local function FindRecord(list,id)
+  for _,record in ipairs(list or {}) do if record.id==id then return record end end
+end
+local function PackRecord(kind,record)
+  local values={}
+  if kind=="notice" then values={record.text}
+  elseif kind=="bank" then values={record.item,record.quantity,record.action}
+  elseif kind=="goal" then values={record.text,record.done and "1" or "0"}
+  elseif kind=="event" then values={record.date,record.time,record.title}
+  elseif kind=="group" then values={record.role,record.dungeon,record.filled and "1" or "0"}
+  elseif kind=="pvp" then values={record.result,record.honour or 0}
+  else return nil end
+  local parts={"1","PUT",kind,Encode(record.id),tostring(record.created or record.updated or 0),Encode(record.author)}
+  for _,value in ipairs(values) do parts[#parts+1]=Encode(value) end
+  local packet=table.concat(parts,"|")
+  if #packet>240 then return nil end
+  return packet
+end
+local function SendRecord(kind,record,channel,target)
+  local packet=PackRecord(kind,record)
+  if packet then Core.Comm:Send(SYNC_PREFIX,packet,channel or "GUILD",target)
+  else Core.Notifications:Print("A guild record was too long to synchronise.") end
+end
+local function PublishRecord(kind,record)
+  local list=RecordList(kind)
+  if not list then return false end
+  record.id=record.id or NextRecordID()
+  record.created=record.created or Core.Util:Now()
+  record.author=record.author or UnitName("player")
+  list[#list+1]=record
+  SendRecord(kind,record,"GUILD")
+  if Hall.Refresh then Hall:Refresh() end
+  return true
+end
+local function MergePacket(fields,sender)
+  local kind=fields[3]
+  local list=RecordList(kind)
+  if not list then return false end
+  local id=Decode(fields[4])
+  if id=="" or FindRecord(list,id) then return false end
+  local record={id=id,created=tonumber(fields[5]) or Core.Util:Now(),author=Decode(fields[6])}
+  if kind=="notice" then record.text=Decode(fields[7])
+  elseif kind=="bank" then record.item=Decode(fields[7]); record.quantity=tonumber(fields[8]) or 0; record.action=Decode(fields[9])
+  elseif kind=="goal" then record.text=Decode(fields[7]); record.done=fields[8]=="1"
+  elseif kind=="event" then record.date=Decode(fields[7]); record.time=Decode(fields[8]); record.title=Decode(fields[9])
+  elseif kind=="group" then record.role=Decode(fields[7]); record.dungeon=Decode(fields[8]); record.filled=fields[9]=="1"
+  elseif kind=="pvp" then
+    record.result=Decode(fields[7]); record.honour=tonumber(fields[8]) or 0
+    DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
+    DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
+    if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
+    elseif record.result=="loss" then DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
+    DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
+  end
+  if #tostring(record.text or record.title or record.item or record.dungeon or "")>100 then return false end
+  list[#list+1]=record
+  if #list>250 then table.remove(list,1) end
+  if Hall.Refresh then Hall:Refresh() end
+  return true
+end
+local function SendSnapshot(target)
+  local kinds={"notice","bank","goal","event","group","pvp"}
+  for _,kind in ipairs(kinds) do
+    local list=RecordList(kind)
+    for _,record in ipairs(list or {}) do SendRecord(kind,record,"WHISPER",target) end
+  end
+end
+local function GuildSender(sender)
+  if not sender or sender=="" or not IsInGuild or not IsInGuild() then return false end
+  Core.Guild:RefreshRoster()
+  return Core.Guild:IsOnline(sender)
+end
+Core.Comm:Register(SYNC_PREFIX,function(message,channel,sender)
+  if channel~="GUILD" and channel~="WHISPER" then return end
+  if not GuildSender(sender) then return end
+  local fields=SplitPacket(message)
+  if fields[1]~="1" then return end
+  if fields[2]=="HELLO" then
+    local count=0
+    for _,kind in ipairs({"notice","bank","goal","event","group","pvp"}) do count=count+#(RecordList(kind) or {}) end
+    Core.Comm:Send(SYNC_PREFIX,"1|PRES|"..tostring(count),"WHISPER",sender)
+  elseif fields[2]=="PRES" then
+    syncPeers[sender]={count=tonumber(fields[3]) or 0}
+  elseif fields[2]=="SYNCREQ" then
+    SendSnapshot(sender)
+  elseif fields[2]=="PUT" then
+    MergePacket(fields,sender)
+  end
+end)
+local function BeginGuildSync()
+  if not IsInGuild or not IsInGuild() then return end
+  syncPeers={}
+  Core.Guild:RefreshRoster()
+  Core.Comm:Send(SYNC_PREFIX,"1|HELLO","GUILD")
+  if C_Timer and C_Timer.After then
+    C_Timer.After(3,function()
+      local peers={}
+      for name in pairs(syncPeers) do peers[#peers+1]=name end
+      table.sort(peers)
+      for index,name in ipairs(peers) do
+        C_Timer.After((index-1)*0.8,function()
+          Core.Comm:Send(SYNC_PREFIX,"1|SYNCREQ","WHISPER",name)
+        end)
+      end
+      if #peers>0 then Core.Notifications:Print("Guild Hall synchronising with "..#peers.." online Taverners member(s).")
+      else Core.Notifications:Print("No other online Taverners addon users found; your local Guild Hall is ready.") end
+    end)
+  end
+end
 
 local previousRefresh = Hall.Refresh
 function Hall:Refresh()
@@ -224,7 +378,7 @@ end
 
 local function AddGuildNotice(text)
   if not text or text == "" then return false end
-  DB.noticeboard[#DB.noticeboard+1] = {text=Core.Util:SafeText(text), created=Core.Util:Now(), done=false, author=UnitName("player")}
+  PublishRecord("notice",{text=Core.Util:SafeText(text),done=false})
   while #DB.noticeboard > 30 do table.remove(DB.noticeboard,1) end
   return true
 end
@@ -232,13 +386,13 @@ local function AddBankEntry(item, quantity, action)
   if not item or item == "" then return false end
   quantity = tonumber(quantity)
   if not quantity or quantity <= 0 then return false end
-  DB.bank[#DB.bank+1] = {item=Core.Util:SafeText(item),quantity=math.floor(quantity),action=(action=="withdrawal" and "Withdrawal" or "Deposit"),owner=UnitName("player"),created=Core.Util:Now()}
+  PublishRecord("bank",{item=Core.Util:SafeText(item),quantity=math.floor(quantity),action=(action=="withdrawal" and "Withdrawal" or "Deposit"),owner=UnitName("player")})
   while #DB.bank > 100 do table.remove(DB.bank,1) end
   return true
 end
 local function AddGoal(text)
   if not text or text == "" then return false end
-  DB.goals[#DB.goals+1] = {text=Core.Util:SafeText(text),created=Core.Util:Now(),done=false}
+  PublishRecord("goal",{text=Core.Util:SafeText(text),done=false})
   return true
 end
 local function MarkGoalDone(index)
@@ -273,8 +427,8 @@ local function HandleGuildCommand(msg)
     if action=="add" then
       local date, timeValue, title = (tail or ""):match("^(%S+)%s+(%S+)%s+(.+)$")
       if date and timeValue and title then
-        DB.events[#DB.events+1]={date=Core.Util:SafeText(date),time=Core.Util:SafeText(timeValue),title=Core.Util:SafeText(title),author=UnitName("player")}
-        Core.Notifications:Print("Guild event saved to this character's local calendar.")
+        PublishRecord("event",{date=Core.Util:SafeText(date),time=Core.Util:SafeText(timeValue),title=Core.Util:SafeText(title)})
+        Core.Notifications:Print("Guild event shared with online Taverners members.")
       else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
     else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
   elseif command == "group" then
@@ -282,15 +436,19 @@ local function HandleGuildCommand(msg)
     if action=="add" then
       local role, dungeon = (tail or ""):match("^(%S+)%s+(.+)$")
       if role and dungeon then
-        DB.groups[#DB.groups+1]={role=Core.Util:SafeText(role),dungeon=Core.Util:SafeText(dungeon),author=UnitName("player"),created=Core.Util:Now(),filled=false}
-        Core.Notifications:Print("Group request saved locally.")
+        PublishRecord("group",{role=Core.Util:SafeText(role),dungeon=Core.Util:SafeText(dungeon),filled=false})
+        Core.Notifications:Print("Group request shared with online Taverners members.")
       else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
     else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
   elseif command == "pvp" then
     local action, amount = (rest or ""):match("^(%S+)%s*(.-)$")
-    if action == "win" then DB.pvp.battlegrounds=DB.pvp.battlegrounds+1; DB.pvp.wins=DB.pvp.wins+1
-    elseif action == "loss" then DB.pvp.battlegrounds=DB.pvp.battlegrounds+1; DB.pvp.losses=DB.pvp.losses+1
-    elseif action == "honour" and tonumber(amount) and tonumber(amount)>0 then DB.pvp.honour=DB.pvp.honour+math.floor(tonumber(amount))
+    if action == "win" or action=="loss" then
+      DB.pvp.battlegrounds=DB.pvp.battlegrounds+1
+      if action=="win" then DB.pvp.wins=DB.pvp.wins+1 else DB.pvp.losses=DB.pvp.losses+1 end
+      PublishRecord("pvp",{result=action,honour=0})
+    elseif action == "honour" and tonumber(amount) and tonumber(amount)>0 then
+      DB.pvp.honour=DB.pvp.honour+math.floor(tonumber(amount))
+      PublishRecord("pvp",{result="honour",honour=math.floor(tonumber(amount))})
     else Core.Notifications:Print("Usage: /tgh pvp win | loss | honour <amount>"); return end
     Core.Notifications:Print("PvP record updated.")
   else
