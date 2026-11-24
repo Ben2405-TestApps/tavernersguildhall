@@ -101,7 +101,7 @@ function Hall:Toggle()
   Build()
   if frame:IsShown() then frame:Hide() else frame:Show(); self:Refresh() end
 end
-SLASH_TAVERNERSGUILDHALL1="/taverners"; SLASH_TAVERNERSGUILDHALL2="/tgh"; SLASH_TAVERNERSGUILDHALL3="/guildhall"
+SLASH_TAVERNERSGUILDHALL1="/tgh"; SLASH_TAVERNERSGUILDHALL2="/guildhall"
 SlashCmdList=SlashCmdList or {}
 SlashCmdList.TAVERNERSGUILDHALL=function(msg) if tostring(msg or ""):lower()=="refresh" then Hall:Refresh() else Hall:Toggle() end end
 local ev=CreateFrame("Frame"); ev:RegisterEvent("PLAYER_LOGIN"); ev:SetScript("OnEvent",function() Build(); Hall:Refresh() end)
