@@ -142,6 +142,8 @@ local function EnsureLists()
   DB.noticeboard = DB.noticeboard or {}
   DB.bank = DB.bank or {}
   DB.goals = DB.goals or {}
+  DB.events = DB.events or {}
+  DB.groups = DB.groups or {}
   DB.pvp = DB.pvp or {}
   DB.pvp.battlegrounds = tonumber(DB.pvp.battlegrounds) or 0
   DB.pvp.wins = tonumber(DB.pvp.wins) or 0
@@ -193,6 +195,30 @@ function Hall:Refresh()
     if not goal.done then active = active + 1; AddLine("• " .. tostring(goal.text)) end
   end
   AddLine(active .. " active goals. Add with /tgh goal add <goal>; finish with /tgh goal done <number>.")
+
+  AddLine(" ")
+  AddLine("GUILD EVENT CALENDAR", "GameFontNormal")
+  local eventCount=0
+  for i=1,#DB.events do
+    local event=DB.events[i]
+    if event and not event.cancelled then
+      eventCount=eventCount+1
+      AddLine(tostring(event.date or "Date TBC").." "..tostring(event.time or "").." — "..tostring(event.title))
+    end
+  end
+  if eventCount==0 then AddLine("No events scheduled. Use /tgh event add <date> <time> <title>.") end
+
+  AddLine(" ")
+  AddLine("GROUP FINDER BOARD", "GameFontNormal")
+  local groupCount=0
+  for i=#DB.groups,math.max(1,#DB.groups-4),-1 do
+    local request=DB.groups[i]
+    if request and not request.filled then
+      groupCount=groupCount+1
+      AddLine(tostring(request.dungeon).." — looking for "..tostring(request.role).." ("..tostring(request.author)..")")
+    end
+  end
+  if groupCount==0 then AddLine("No local group requests. Use /tgh group add <role> <dungeon>.") end
   body:SetHeight(math.max(300, -cursorY + 30))
 end
 
@@ -242,6 +268,24 @@ local function HandleGuildCommand(msg)
     if action == "add" and AddGoal(text) then Core.Notifications:Print("Adventure goal added.")
     elseif action == "done" and MarkGoalDone(text) then Core.Notifications:Print("Adventure goal completed.")
     else Core.Notifications:Print("Usage: /tgh goal add <goal> OR /tgh goal done <number>") end
+  elseif command == "event" then
+    local action, tail = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action=="add" then
+      local date, timeValue, title = (tail or ""):match("^(%S+)%s+(%S+)%s+(.+)$")
+      if date and timeValue and title then
+        DB.events[#DB.events+1]={date=Core.Util:SafeText(date),time=Core.Util:SafeText(timeValue),title=Core.Util:SafeText(title),author=UnitName("player")}
+        Core.Notifications:Print("Guild event saved to this character's local calendar.")
+      else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
+    else Core.Notifications:Print("Usage: /tgh event add <date> <time> <title>") end
+  elseif command == "group" then
+    local action, tail = (rest or ""):match("^(%S+)%s*(.-)$")
+    if action=="add" then
+      local role, dungeon = (tail or ""):match("^(%S+)%s+(.+)$")
+      if role and dungeon then
+        DB.groups[#DB.groups+1]={role=Core.Util:SafeText(role),dungeon=Core.Util:SafeText(dungeon),author=UnitName("player"),created=Core.Util:Now(),filled=false}
+        Core.Notifications:Print("Group request saved locally.")
+      else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
+    else Core.Notifications:Print("Usage: /tgh group add <role> <dungeon>") end
   elseif command == "pvp" then
     local action, amount = (rest or ""):match("^(%S+)%s*(.-)$")
     if action == "win" then DB.pvp.battlegrounds=DB.pvp.battlegrounds+1; DB.pvp.wins=DB.pvp.wins+1
@@ -250,7 +294,7 @@ local function HandleGuildCommand(msg)
     else Core.Notifications:Print("Usage: /tgh pvp win | loss | honour <amount>"); return end
     Core.Notifications:Print("PvP record updated.")
   else
-    Core.Notifications:Print("Guild Hall: /tgh | note add | bank add | goal add/done | pvp win/loss/honour")
+    Core.Notifications:Print("Guild Hall: /tgh | note add | bank add | goal add/done | event add | group add | pvp win/loss/honour")
   end
   Hall:Refresh()
 end
