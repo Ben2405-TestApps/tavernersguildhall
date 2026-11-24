@@ -2,7 +2,7 @@
 ## Title: Taverners Guild Hall
 ## Notes: Central dashboard for The Taverners Guild addon suite.
 ## Author: The Taverners Guild
-## Version: 0.3.0
+## Version: 0.4.0
 ## Dependencies: TavernersCore
 ## SavedVariables: TavernersGuildHallDB
 GuildHall.lua
