@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local Core = _G.TavernersCore
 if not Core then return end
 
-local DB = Core.Database:Register("TavernersGuildHallDB", {version=2, minimised=false, noticeboard={}, bank={}, pvp={battlegrounds=0,wins=0,losses=0,honour=0}, goals={}}, 2)
+local DB = Core.Database:Register("TavernersGuildHallDB", {version=3, minimised=false, noticeboard={}, bank={}, pvp={battlegrounds=0,wins=0,losses=0,honour=0}, goals={}, permissions={notice=1,event=1,bankDeposit=99,bankWithdraw=1,goal=99,group=99,pvp=99}}, 3)
 local Hall = {db=DB}
 Core:RegisterModule("GuildHall", Hall)
 
@@ -158,6 +158,9 @@ local function EnsureLists()
   DB.pvp.wins = tonumber(DB.pvp.wins) or 0
   DB.pvp.losses = tonumber(DB.pvp.losses) or 0
   DB.pvp.honour = tonumber(DB.pvp.honour) or 0
+  DB.permissions = DB.permissions or {}
+  local defaults={notice=1,event=1,bankDeposit=99,bankWithdraw=1,goal=99,group=99,pvp=99}
+  for key,value in pairs(defaults) do if DB.permissions[key]==nil then DB.permissions[key]=value end end
 end
 EnsureLists()
 
@@ -195,6 +198,27 @@ local function NextRecordID()
   syncCounter=syncCounter+1
   return tostring(UnitName("player") or "Unknown")..":"..tostring(Core.Util:Now())..":"..tostring(syncCounter)
 end
+local PERMISSION_LABELS={notice="Notice posting",event="Event creation",bankDeposit="Bank deposits",bankWithdraw="Bank withdrawals",goal="Adventure goals",group="Group requests",pvp="PvP records"}
+local function GetGuildRankIndex(name)
+  if not name or not IsInGuild or not IsInGuild() or not GetNumGuildMembers or not GetGuildRosterInfo then return nil end
+  local wanted=Core.Identity:ShortName(name)
+  for i=1,GetNumGuildMembers() do
+    local member,_,rankIndex=GetGuildRosterInfo(i)
+    if member and Core.Identity:ShortName(member)==wanted then return tonumber(rankIndex) end
+  end
+  return nil
+end
+local function IsGuildMember(name) return GetGuildRankIndex(name)~=nil end
+local function CanAction(action,actor)
+  local rank=GetGuildRankIndex(actor or UnitName("player"))
+  local threshold=tonumber(DB.permissions and DB.permissions[action])
+  return rank~=nil and threshold~=nil and rank<=threshold
+end
+local function RequirePermission(action)
+  if CanAction(action,UnitName("player")) then return true end
+  Core.Notifications:Print("Permission denied: your guild rank cannot perform "..tostring(PERMISSION_LABELS[action] or action)..".")
+  return false
+end
 local function FindRecord(list,id)
   for _,record in ipairs(list or {}) do if record.id==id then return record end end
 end
@@ -218,9 +242,19 @@ local function SendRecord(kind,record,channel,target,operation)
   if packet then Core.Comm:Send(SYNC_PREFIX,packet,channel or "GUILD",target)
   else Core.Notifications:Print("A guild record was too long to synchronise.") end
 end
+local function ActionForRecord(kind,record)
+  if kind=="notice" then return "notice"
+  elseif kind=="bank" then return (tostring(record.action):lower()=="withdrawal" and "bankWithdraw" or "bankDeposit")
+  elseif kind=="goal" then return "goal"
+  elseif kind=="event" then return "event"
+  elseif kind=="group" then return "group"
+  elseif kind=="pvp" then return "pvp" end
+end
 local function PublishRecord(kind,record)
   local list=RecordList(kind)
   if not list then return false end
+  local permission=ActionForRecord(kind,record)
+  if permission and not RequirePermission(permission) then return false end
   record.id=record.id or NextRecordID()
   record.created=record.created or Core.Util:Now()
   record.author=record.author or UnitName("player")
@@ -237,7 +271,9 @@ local function MergePacket(fields,sender)
   if id=="" then return false end
   local existing=FindRecord(list,id)
   if existing and fields[2]~="UPD" then return false end
-  local record={id=id,created=tonumber(fields[5]) or Core.Util:Now(),author=Decode(fields[6])}
+  local author=Decode(fields[6])
+  if not IsGuildMember(sender) or not IsGuildMember(author) then return false end
+  local record={id=id,created=tonumber(fields[5]) or Core.Util:Now(),author=author}
   if kind=="notice" then record.text=Decode(fields[7])
   elseif kind=="bank" then record.item=Decode(fields[7]); record.quantity=tonumber(fields[8]) or 0; record.action=Decode(fields[9]); record.owner=record.author
   elseif kind=="goal" then record.text=Decode(fields[7]); record.done=fields[8]=="1"
@@ -252,6 +288,11 @@ local function MergePacket(fields,sender)
       else DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
     end
     DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
+  end
+  local permission=ActionForRecord(kind,record)
+  if permission and (not CanAction(permission,sender) or not CanAction(permission,author)) then
+    Core.Diagnostics:Log("WARN","Rejected unauthorised guild record from "..tostring(sender))
+    return false
   end
   if #tostring(record.text or record.title or record.item or record.dungeon or "")>100 then return false end
   if existing then
@@ -271,7 +312,7 @@ local function SendSnapshot(target)
       record.id=record.id or NextRecordID()
       record.created=record.created or Core.Util:Now()
       record.author=record.author or record.owner or UnitName("player")
-      SendRecord(kind,record,"WHISPER",target)
+      SendRecord(kind,record,"WHISPER",target,"SYNC")
     end
   end
 end
@@ -289,11 +330,21 @@ Core.Comm:Register(SYNC_PREFIX,function(message,channel,sender)
     local count=0
     for _,kind in ipairs({"notice","bank","goal","event","group","pvp"}) do count=count+#(RecordList(kind) or {}) end
     Core.Comm:Send(SYNC_PREFIX,"1|PRES|"..tostring(count),"WHISPER",sender)
+    if GetGuildRankIndex(UnitName("player"))==0 then
+      for action,threshold in pairs(DB.permissions) do Core.Comm:Send(SYNC_PREFIX,"1|PERM|"..action.."|"..tostring(threshold),"WHISPER",sender) end
+    end
   elseif fields[2]=="PRES" then
     syncPeers[sender]={count=tonumber(fields[3]) or 0}
   elseif fields[2]=="SYNCREQ" then
     SendSnapshot(sender)
-  elseif fields[2]=="PUT" or fields[2]=="UPD" then
+  elseif fields[2]=="PERM" then
+    local action=fields[3]
+    local threshold=tonumber(fields[4])
+    if GetGuildRankIndex(sender)==0 and DB.permissions[action]~=nil and threshold and threshold>=0 and threshold<=99 then
+      DB.permissions[action]=math.floor(threshold)
+      if Hall.Refresh then Hall:Refresh() end
+    end
+  elseif fields[2]=="PUT" or fields[2]=="UPD" or fields[2]=="SYNC" then
     MergePacket(fields,sender)
   end
 end)
@@ -373,6 +424,10 @@ function Hall:Refresh()
     end
   end
   if eventCount==0 then AddLine("No events scheduled. Use /tgh event add <date> <time> <title>.") end
+  AddLine(" ")
+  AddLine("PERMISSIONS", "GameFontNormal")
+  AddLine("Guild Master controls rank thresholds. Lower rank numbers are more senior.")
+  AddLine("Use /tgh permissions to view settings.")
 
   AddLine(" ")
   AddLine("GROUP FINDER BOARD", "GameFontNormal")
@@ -422,6 +477,25 @@ local function HandleGuildCommand(msg)
   command = (command or ""):lower()
   if command == "sync" then
     BeginGuildSync()
+  elseif command == "permissions" or command=="perms" then
+    local action, value=(rest or ""):match("^(%S+)%s*(.-)$")
+    if action=="set" then
+      local key,rank=(value or ""):match("^(%S+)%s+(%d+)$")
+      rank=tonumber(rank)
+      if GetGuildRankIndex(UnitName("player"))~=0 then
+        Core.Notifications:Print("Only the Guild Master can change Taverners permissions.")
+      elseif not key or DB.permissions[key]==nil or not rank or rank<0 or rank>99 then
+        Core.Notifications:Print("Usage: /tgh permissions set <notice|event|bankDeposit|bankWithdraw|goal|group|pvp> <rank index>")
+      else
+        DB.permissions[key]=rank
+        Core.Comm:Send(SYNC_PREFIX,"1|PERM|"..key.."|"..tostring(rank),"GUILD")
+        Core.Notifications:Print((PERMISSION_LABELS[key] or key).." now allowed through guild rank "..rank..".")
+      end
+    else
+      Core.Notifications:Print("Taverners permissions (lower rank number = more senior):")
+      for key,label in pairs(PERMISSION_LABELS) do Core.Notifications:Print(label..": rank "..tostring(DB.permissions[key])) end
+      Core.Notifications:Print("Only Guild Master can change settings: /tgh permissions set <action> <rank index>.")
+    end
   elseif command == "note" then
     local action, text = (rest or ""):match("^(%S+)%s*(.-)$")
     if action == "add" and AddGuildNotice(text) then Core.Notifications:Print("Notice shared with online Taverners members.")
