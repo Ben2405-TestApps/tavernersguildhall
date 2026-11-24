@@ -85,10 +85,7 @@ local function Build()
   local title=frame:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
   title:SetPoint("TOPLEFT",18,-16); title:SetText("|cffffd27aThe Taverners|r — Guild Hall")
   local close=CreateFrame("Button",nil,frame,"UIPanelCloseButton"); close:SetPoint("TOPRIGHT",-4,-4)
-  local refresh=CreateFrame("Button",nil,frame,"UIPanelButtonTemplate")
-  refresh:SetSize(100,24); refresh:SetPoint("TOPRIGHT",-42,-48); refresh:SetText("Refresh")
-  refresh:SetScript("OnClick",function() Hall:Refresh() end)
-  local actions={{"Quests","QuestCompanion"},{"Gear","GearGuide"},{"Dungeons","DungeonTool"},{"Crafting","CraftingDirectory"},{"Ammo","AmmoGuard"}}
+    local actions={{"Quests","QuestCompanion"},{"Gear","GearGuide"},{"Dungeons","DungeonTool"},{"Crafting","CraftingDirectory"},{"Ammo","AmmoGuard"}}
   local x=18
   for _,action in ipairs(actions) do
     local b=CreateFrame("Button",nil,frame,"UIPanelButtonTemplate")
@@ -97,7 +94,7 @@ local function Build()
     x=x+124
   end
   local scroll=CreateFrame("ScrollFrame","TavernersGuildHallScroll",frame,"UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT",18,-52); scroll:SetPoint("BOTTOMRIGHT",-36,18)
+  scroll:SetPoint("TOPLEFT",18,-82); scroll:SetPoint("BOTTOMRIGHT",-36,18)
   body=CreateFrame("Frame",nil,scroll); body:SetSize(660,400); scroll:SetScrollChild(body)
 end
 function Hall:Toggle()
@@ -106,5 +103,5 @@ function Hall:Toggle()
 end
 SLASH_TAVERNERSGUILDHALL1="/taverners"; SLASH_TAVERNERSGUILDHALL2="/tgh"; SLASH_TAVERNERSGUILDHALL3="/guildhall"
 SlashCmdList=SlashCmdList or {}
-SlashCmdList.TAVERNERSGUILDHALL=function() Hall:Toggle() end
+SlashCmdList.TAVERNERSGUILDHALL=function(msg) if tostring(msg or ""):lower()=="refresh" then Hall:Refresh() else Hall:Toggle() end end
 local ev=CreateFrame("Frame"); ev:RegisterEvent("PLAYER_LOGIN"); ev:SetScript("OnEvent",function() Build(); Hall:Refresh() end)
