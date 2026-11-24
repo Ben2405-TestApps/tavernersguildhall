@@ -286,13 +286,7 @@ local function MergePacket(fields,sender)
     record.killingBlows=tonumber(fields[9]) or 0; record.honorableKills=tonumber(fields[10]) or 0
     record.deaths=tonumber(fields[11]) or 0; record.damage=tonumber(fields[12]) or 0
     record.healing=tonumber(fields[13]) or 0; record.map=Decode(fields[14]); record.matchKey=Decode(fields[15])
-    DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
-    if record.result=="win" or record.result=="loss" or record.result=="draw" then
-      DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
-      if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
-      elseif record.result=="loss" then DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
-    end
-    DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
+    if record.result~="win" and record.result~="loss" and record.result~="draw" and record.result~="honour" then return false end
   end
   local permission=ActionForRecord(kind,record)
   local senderAllowed=(fields[2]=="SYNC") or CanAction(permission,sender)
@@ -301,6 +295,15 @@ local function MergePacket(fields,sender)
     return false
   end
   if #tostring(record.text or record.title or record.item or record.dungeon or "")>100 then return false end
+  if kind=="pvp" and not existing then
+    DB.pvp=DB.pvp or {battlegrounds=0,wins=0,losses=0,honour=0}
+    if record.result=="win" or record.result=="loss" or record.result=="draw" then
+      DB.pvp.battlegrounds=(tonumber(DB.pvp.battlegrounds) or 0)+1
+      if record.result=="win" then DB.pvp.wins=(tonumber(DB.pvp.wins) or 0)+1
+      elseif record.result=="loss" then DB.pvp.losses=(tonumber(DB.pvp.losses) or 0)+1 end
+    end
+    DB.pvp.honour=(tonumber(DB.pvp.honour) or 0)+record.honour
+  end
   if existing then
     for key,value in pairs(record) do existing[key]=value end
   else
