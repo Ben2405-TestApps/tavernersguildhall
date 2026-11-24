@@ -36,3 +36,16 @@ The Guild Hall dashboard now includes local noticeboard posts, a local guild-ban
 - `/tgh pvp win`, `/tgh pvp loss`, `/tgh pvp honour <amount>`
 
 These records are currently local to the character and are not shared with guild members. The ledger is not an authoritative live guild-bank balance.
+
+
+## Guild-wide synchronisation (0.3.0)
+
+The Guild Hall now replicates noticeboard posts, contribution-ledger entries, adventure goals, event listings, group requests and newly recorded PvP results between online guild members who have compatible TavernersCore and Guild Hall versions installed.
+
+- Uses the Core addon-message queue over the WoW guild channel for new records.
+- On login, clients announce themselves, discover online addon users and request their saved records by whisper.
+- Records are deduplicated by ID; goal completion updates are replicated.
+- Each client retains its own SavedVariables copy so returning members can catch up from online peers.
+- No external server or website is required.
+
+**Important limitations:** this is peer-to-peer replication, not a central authoritative database. At least one online member with the relevant records must be running the compatible addons for a returning player to catch up. The game does not allow an addon to write directly into the real guild bank; the bank feature is a contribution ledger only. Existing pre-sync PvP totals remain local; new PvP entries are shared. Guild-wide sharing has not yet been verified in the live WoW Forever client.
