@@ -5,7 +5,7 @@ A central overview for The Taverners Guild addon suite.
 ## Install
 Install TavernersCore and the addon modules you use, then place this folder in `Interface/AddOns/TavernersGuildHall`. Enable it in the AddOns list.
 
-Use `/tgh`, `/guildhall`, or `/taverners` to open the dashboard.
+Use `/tgh` or `/guildhall` to open the dashboard. The `/taverners` alias is reserved by the Crafting Directory.
 
 ## Current dashboard
 - Character, class, level and faction summary.
